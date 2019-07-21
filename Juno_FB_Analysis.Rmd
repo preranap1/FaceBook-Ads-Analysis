@@ -1,0 +1,245 @@
+---
+title: "Project_v4: Added few plots"
+author: "Prerana"
+date: "3/8/2019"
+output: html_document
+---
+
+
+```{r}
+#Libraries required
+rm(list=ls())     
+```
+
+1. Load data, clean data
+```{r}
+library(data.table)
+library(lfe)
+library(stargazer)
+library(gdata)
+library(ggplot2)
+library(psych) 
+library(ggeffects)
+library(QuantPsyc)
+library(VIF)
+library(usdm)
+library(lmtest)
+library(multiwayvcov)
+library(sandwich)
+library(foreign)
+
+df = fread("/Users/mapeishidai/Desktop/Peishi/School/Santa Clara U/Winter 2019/MKTG 3597/Project/Data/JUNO FB Ads-Jul-1-2018-Feb-28-2019.csv")
+
+colnames(df)[colnames(df)=="Campaign Name"] <- "campaign_name"
+colnames(df)[colnames(df)=="Campaign ID"] <- "campaign_ID"
+colnames(df)[colnames(df)=="Result Type"] <- "result_type"
+colnames(df)[colnames(df)=="Results [On Ad]"] <- "results_on_ad"
+
+colnames(df)[colnames(df)=="Result Rate"] <- "result_rate"
+colnames(df)[colnames(df)=="Result Rate [On Ad]"] <- "result_rate_on_ad"
+colnames(df)[colnames(df)=="Cost per Result"] <- "cost_per_result"
+colnames(df)[colnames(df)=="Cost per Result [On Ad]"] <- "cost_per_result_on_ad"
+
+colnames(df)[colnames(df)=="Amount Spent (USD)"] <- "amount_spent_USD"
+colnames(df)[colnames(df)=="CPM (Cost per 1,000 Impressions)"] <- "CPM"
+colnames(df)[colnames(df)=="Cost per 1,000 People Reached"] <- "CPPR"
+colnames(df)[colnames(df)=="Link Clicks"] <- "link_clicks"
+
+colnames(df)[colnames(df)=="Link Clicks [On Ad]"] <- "link_clicks_on_ad"
+colnames(df)[colnames(df)=="Clicks (All)"] <- "clicks_all"
+colnames(df)[colnames(df)=="CPC (All)"] <- "CPC_all"
+colnames(df)[colnames(df)=="CPC (Cost per Link Click)"] <- "CPC_per_link"
+
+colnames(df)[colnames(df)=="CPC (Cost per Link Click) [On Ad]"] <- "CPC_per_link_on_ad"
+colnames(df)[colnames(df)=="CTR (All)"] <- "CTR_All"
+colnames(df)[colnames(df)=="CTR (Link Click-Through Rate)"] <- "CTR_link"
+colnames(df)[colnames(df)=="Cost per Purchase"] <- "cost_per_purchase"
+
+colnames(df)[colnames(df)=="Relevance Score"] <- "relevance_score"
+colnames(df)[colnames(df)=="Ad Delivery"] <- "ad_delivery"
+colnames(df)[colnames(df)=="Campaign Delivery"] <- "campaign_delivery"
+colnames(df)[colnames(df)=="Adds to Cart"] <- "adds_to_cart"
+
+colnames(df)[colnames(df)=="Checkouts Initiated"] <- "checkouts_initiated"
+colnames(df)[colnames(df)=="Landing Page Views"] <- "landing_page_views"
+colnames(df)[colnames(df)=="Landing Page Views [On Ad]"] <- "landing_page_views_on_ad"
+colnames(df)[colnames(df)=="Unique Purchases"] <- "unique_purchases"
+
+colnames(df)[colnames(df)=="Unique Searches"] <- "unique_searches"
+colnames(df)[colnames(df)=="Website Conversions"] <- "website_conversions"
+colnames(df)[colnames(df)=="Website Adds to Cart"] <- "website_adds_to_cart"
+colnames(df)[colnames(df)=="Website Purchases"] <- "Website_purchases"
+
+colnames(df)[colnames(df)=="Website Searches"] <- "website_searches"
+colnames(df)[colnames(df)=="Reporting Starts"] <- "reporting_starts"
+colnames(df)[colnames(df)=="Reporting Ends"] <- "reporting_ends"
+
+#new column for year and month for each campaign
+df[,monthfe := month(reporting_starts)]
+df[,yearfe := year(reporting_starts)]
+df$yearmon <- as.yearmon(paste(df$yearfe, df$monthfe), "%Y %m")
+
+```
+
+2. Explore data
+
+```{r}
+
+names(df)
+
+summary(df)
+
+uniqueN( df[, .(campaign_ID, Region, monthfe, yearfe)] ) / df[, .N] #0.9974302
+
+setkey(df, campaign_ID, Region, monthfe, yearfe)
+
+
+```
+
+
+Regressions
+
+```{r}
+# Detecting Multicollinearity
+head(df)
+df2=df[,"Reach"]
+df2=df[,c("amount_spent_USD", "Reach", "Impressions", "Frequency", "link_clicks", "clicks_all", "CTR_All")]
+cor(df2)
+vif(df2)
+# Multicollinearity testings shows that variables such as Reach, Impressions, clicks_all have Multicollinearity issue with amount_spent_USD, thus removing them from the models
+
+df3=df[,"Reach"]
+df3=df[,c("amount_spent_USD", "Frequency", "CTR_link")]
+cor(df3)
+vif(df3)
+
+
+# Purchases as Y variable
+#lm0 = lm(Purchases~amount_spent_USD+Reach+Results+clicks_all+CTR_All, data=df)
+
+lm1 = lm(Purchases~amount_spent_USD, data=df)
+lm2 = lm(Purchases~amount_spent_USD+CTR_link, data=df)
+
+felm1 = felm(Purchases~amount_spent_USD+CTR_link | Region + yearfe + monthfe + campaign_ID, data=df)
+
+felm2 = felm(Purchases ~ amount_spent_USD+CTR_link | Region + yearfe + monthfe + campaign_ID | 0 | Region , data=df)
+
+felm3 = felm(Purchases ~ amount_spent_USD+CTR_link | Region + yearfe + monthfe + campaign_ID | 0 | monthfe , data=df)
+
+felm4 = felm(Purchases ~ amount_spent_USD+CTR_link | Region + yearfe + monthfe + campaign_ID | 0 | campaign_ID , data=df)
+
+# Heteroscedasticity tests
+gqtest(lm2)
+bptest(lm2)
+# Both tests with p-value less than 0.05, which are significant, indicates heteroscedasticity
+gqtest(felm1)
+bptest(felm1)
+# Both tests with p-value less than 0.05, which are significant, indicates heteroscedasticity
+
+gqtest(felm2)
+bptest(felm2)
+
+
+#se increase when clustered by month. may be because there is no change in campaigns monthwise. will have to plot graph of purchases vs mnth to check if there is a trend.
+#felm3 = felm(Purchases ~ Reach + amount_spent_USD + Results + clicks_all + CTR_All + monthfe | Region + monthfe | 0 | monthfe, data=df)
+
+stargazer(lm1,lm2,felm1, felm2, felm3, felm4, title = "lm vs. felm", 
+          se = list(NULL, summary(felm1, robust=TRUE)$coefficients[,2], summary(felm2, robust=TRUE)$coefficients[,2], summary(felm3, robust=TRUE)$coefficients[,2], summary(felm4, robust=TRUE)$coefficients[,2]), column.labels=c("lm1","lm2", "felm","felm clust region", "felm clust month", "felm clust campaign" ), align=TRUE, type="text")
+
+
+```
+
+
+Web Analytics
+```{r}
+
+#obervations by region
+df[, .N, Region][order(-N)]
+# of unique campaigns
+df[, uniqueN(campaign_ID)]
+df[, uniqueN(campaign_ID), monthfe]
+
+
+#FB Ad spend and purchases by year and month
+df[, .(totaladspend = sum(amount_spent_USD, na.rm = TRUE), totalpurchases=sum(Purchases, na.rm = TRUE)),by = list(yearfe, monthfe)][order(yearfe, monthfe)]
+# plots of ad spend and total purchases by year and month
+ggplot(df, aes(x=yearmon, y=Purchases)) + geom_bar(stat="identity")
+ggplot(df, aes(x=yearmon, y=amount_spent_USD)) + geom_bar(stat="identity")
+
+#plot of Purchase and amout_spent_USD
+ggplot(df, aes(x=amount_spent_USD, y=Purchases)) + geom_jitter()
+
+#FB AD spend & Purchases for 50 US regions/states 
+df[, .(totaladspend = sum(amount_spent_USD, na.rm = TRUE),totalpurchases = sum(Purchases, na.rm = TRUE)),by = list(Region)][order(-totalpurchases)][1:50]
+
+
+#FB ad metrics by 50 US regions/states (usstatesmetrics)
+usstatesmetrics = df[, .(totaladspend = sum(amount_spent_USD, na.rm = TRUE),totalpurchases = sum(Purchases, na.rm = TRUE), totalclicks = sum(link_clicks, na.rm = TRUE), conrate = sum(Purchases, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE), costperpurchase = sum(amount_spent_USD, na.rm = TRUE)/sum(Purchases, na.rm = TRUE), costperclick = sum(amount_spent_USD, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE) ), by = list(Region)][order(-totalpurchases)][1:50]
+
+usstatesmetrics[order(-conrate)]
+
+usstatesmetrics[order(costperpurchase)] # cost per purchase is the most important metric to company currently to measure ad campaign cost-effectiveness
+
+usstatesmetrics[order(costperclick)]
+
+
+#FB ad metrics by AD Campaigns (campaignmetrics)
+campaignmetrics = df[, .(totaladspend = sum(amount_spent_USD, na.rm = TRUE),totalpurchases = sum(Purchases, na.rm = TRUE), totalclicks = sum(link_clicks, na.rm = TRUE), conrate = sum(Purchases, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE), costperpurchase = sum(amount_spent_USD, na.rm = TRUE)/sum(Purchases, na.rm = TRUE), costperclick = sum(amount_spent_USD, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE) ), by = list(campaign_name)] [order(-totalpurchases)]
+
+campaignmetrics[order(-conrate)]
+
+campaignmetrics[order(costperpurchase)] # cost per purchase is the most important metric to company currently to measure ad campaign cost-effectiveness
+
+campaignmetrics[order(costperclick)]
+
+
+#FB ad metrics by Year & Month (timemetrics)
+timemetrics = df[, .(totaladspend = sum(amount_spent_USD, na.rm = TRUE),totalpurchases = sum(Purchases, na.rm = TRUE), totalclicks = sum(link_clicks, na.rm = TRUE), conrate = sum(Purchases, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE), costperpurchase = sum(amount_spent_USD, na.rm = TRUE)/sum(Purchases, na.rm = TRUE), costperclick = sum(amount_spent_USD, na.rm = TRUE)/sum(link_clicks, na.rm = TRUE) ), by = list(yearfe, monthfe)][order(yearfe, monthfe)]
+
+timemetrics
+
+# drow plots by year-month the changes in totaladspend, total purchases, conrate change and cost per purchase change 
+
+
+
+
+
+
+
+
+
+#amount spent vs. purchases across months for highest ad-spent region
+df[Region == 'California', .(sum(amount_spent_USD, na.rm = TRUE),sum(Purchases, na.rm = TRUE)),monthfe]
+
+#Ad spends across months for California (highest as-spent region)
+plot(
+  df[Region=="California", 
+     sum(amount_spent_USD, na.rm = TRUE), 
+     list(yearfe, monthfe)], 
+  main="California", ylab="Amount spent", xlab="Month")
+
+#Total expenditure across months
+plot(
+  df[, 
+     sum(amount_spent_USD, na.rm = TRUE), 
+     monthfe], 
+  main="Total Ad Expenditure across months", ylab="Amount spent", xlab="Month")
+
+#Total Purchases across months
+plot(
+  df[, 
+     sum(Purchases, na.rm = TRUE), 
+     monthfe], 
+  main="Total Purchases across months", ylab="Purchases", xlab="Month")
+
+#Cost per purchases across months
+plot(
+  df[, 
+     sum(cost_per_purchase, na.rm = TRUE), 
+     monthfe], 
+  main="Cost Per Purchases across months", ylab="Purchases", xlab="Month")
+
+
+```
+
+
